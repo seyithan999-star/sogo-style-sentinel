@@ -1,33 +1,40 @@
-"""
-Kaynak kayıt defteri. Buraya yeni Shopify tabanlı mağaza eklemek = 1 satır.
-Gerçek domain'leri sen (kullanıcı) doğrulayıp eklemelisin - varsayım/tahmini domain
-eklemek şartnamenin "sahte kaynak yok" ilkesine aykırı olur, bu yüzden liste kasıtlı
-olarak boş/örnek bırakılmıştır. README'de nasıl kaynak ekleneceği anlatılmıştır.
+"""Source registry.
+
+The registry exposes direct adapters plus authorization-aware research adapters. Sources that
+require credentials remain explicitly disabled rather than silently returning zero products.
 """
 from app.adapters.shopify_adapter import ShopifyAdapter
 from app.adapters.manual_access_adapter import ManualAccessAdapter
+from app.adapters.search_provider_adapter import SearchProviderAdapter
 from app.adapters.base import BaseSourceAdapter
+from app.config import settings
 
-# ÖRNEK: gerçek, doğrulanmış Shopify domain'lerini buraya ekle.
-# ShopifyAdapter("Marka Adi", "https://gercek-magaza-domaini.com"),
-SHOPIFY_SOURCES: list[BaseSourceAdapter] = [
-    # ShopifyAdapter("Ornek Marka", "https://ornek-magaza.myshopify.com"),
+# Verified Shopify storefronts can be added here. Keep domains verified before enabling.
+SHOPIFY_SOURCES: list[BaseSourceAdapter] = []
+
+SEARCH_SOURCES: list[BaseSourceAdapter] = [
+    SearchProviderAdapter(
+        settings.search_provider_url,
+        settings.search_provider_key,
+        max_queries=settings.search_provider_max_queries,
+        auth_header=settings.search_provider_auth_header,
+    )
 ]
 
-# Dürüstçe "disabled" olarak işaretlenen, resmi izin gerektiren kaynaklar.
 MANUAL_ACCESS_SOURCES: list[BaseSourceAdapter] = [
-    ManualAccessAdapter("instagram", "Meta Graph API resmi izni gerekir - henüz bağlanmadı"),
-    ManualAccessAdapter("pinterest", "Pinterest API resmi izni gerekir - henüz bağlanmadı"),
-    ManualAccessAdapter("xiaohongshu_red", "Resmi API yok, izinli 3. parti veri servisi gerekir"),
-    ManualAccessAdapter("douyin", "Resmi API yok, izinli 3. parti veri servisi gerekir"),
-    ManualAccessAdapter("weibo", "Resmi API izni gerekir - henüz bağlanmadı"),
-    ManualAccessAdapter("wildberries", "Resmi API/izinli erişim doğrulanmadı"),
-    ManualAccessAdapter("ozon", "Resmi API/izinli erişim doğrulanmadı"),
-    ManualAccessAdapter("lamoda", "Resmi API/izinli erişim doğrulanmadı"),
-    ManualAccessAdapter("farfetch", "Resmi partner API'si gerekir - henüz bağlanmadı"),
-    ManualAccessAdapter("yoox_net_a_porter", "Resmi partner API'si gerekir - henüz bağlanmadı"),
+    ManualAccessAdapter("instagram", "Use Meta/authorized discovery or the licensed search provider; direct scraping is not enabled"),
+    ManualAccessAdapter("pinterest", "Use Pinterest/authorized access or the licensed search provider"),
+    ManualAccessAdapter("xiaohongshu_red", "Use licensed/authorized provider access"),
+    ManualAccessAdapter("douyin", "Use licensed/authorized provider access"),
+    ManualAccessAdapter("weibo", "Use official/authorized access"),
+    ManualAccessAdapter("wildberries", "Direct adapter not enabled; coverage available through configured search provider"),
+    ManualAccessAdapter("ozon", "Direct adapter not enabled; coverage available through configured search provider"),
+    ManualAccessAdapter("lamoda", "Direct adapter not enabled; coverage available through configured search provider"),
+    ManualAccessAdapter("farfetch", "Partner/direct adapter not enabled; coverage available through configured search provider"),
+    ManualAccessAdapter("yoox_net_a_porter", "Partner/direct adapter not enabled; coverage available through configured search provider"),
+    ManualAccessAdapter("pantone", "Use official/public trend pages or MANUAL_COLOR_PALETTE; proprietary swatch scraping is not enabled"),
 ]
 
 
 def get_all_sources() -> list[BaseSourceAdapter]:
-    return SHOPIFY_SOURCES + MANUAL_ACCESS_SOURCES
+    return SHOPIFY_SOURCES + SEARCH_SOURCES + MANUAL_ACCESS_SOURCES

@@ -4,6 +4,8 @@
 İleride: seçili ürünlerde AI vision/LLM destekli detay analizi eklenebilir (bkz. score_with_llm_stub).
 """
 from app.schemas import RawProduct
+from app.trend_engine import trend_score
+from app.attribute_extraction import extract_attributes
 
 PREMIUM_KEYWORDS = [
     "embroidered", "nakış", "velour", "kadife", "half zip", "yarım fermuar", "half-zip",
@@ -34,6 +36,7 @@ def score_product(raw: RawProduct, style_weights: dict[str, float] | None = None
     style_weights: {"color:ekru": 8.2, "fabric:velour": 5.0, ...} gibi öğrenilen ağırlıklar (opsiyonel).
     """
     text = f"{raw.title} {raw.category or ''} {' '.join(str(v) for v in raw.raw_metadata.values())}"
+    attrs = extract_attributes(text)
 
     commercial = _keyword_score(text, COMMERCIAL_KEYWORDS)
     premium = _keyword_score(text, PREMIUM_KEYWORDS)
@@ -63,7 +66,7 @@ def score_product(raw: RawProduct, style_weights: dict[str, float] | None = None
         "originality": round(originality, 1),
         "premium": round(premium, 1),
         "sogo_fit": round(sogo_fit, 1),
-        "trend": 0.0,  # trend_engine.py tarafından ayrıca hesaplanıp güncellenir
+        "trend": trend_score(raw),
     }
 
 

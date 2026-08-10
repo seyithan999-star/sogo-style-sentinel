@@ -6,7 +6,6 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.database import init_db
 from app.bot.instance import bot, dp
 from app.scheduler import start_scheduler
 from app.dashboard import router as dashboard_router
@@ -20,7 +19,6 @@ polling_task: asyncio.Task | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting SOGO Style Sentinel...")
-    await init_db()
     start_scheduler()
 
     global polling_task

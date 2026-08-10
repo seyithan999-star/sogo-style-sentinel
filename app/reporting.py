@@ -6,7 +6,7 @@ tek worker process varsayımı - birden fazla worker instance'ı için Postgres 
 kullanılabilir, bkz. README "Ölçeklendirme" bölümü).
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select, desc
@@ -22,7 +22,7 @@ from app.bot.product_card import send_product_card
 logger = logging.getLogger("sogo.reporting")
 
 
-async def send_daily_report(chat_id: str | None = None, triggered_manually: bool = False) -> dict:
+async def send_daily_report(chat_id: str | None = None, triggered_manually: bool = False, scan_before_report: bool = True) -> dict:
     tz = ZoneInfo(settings.app_timezone)
     today_str = datetime.now(tz).strftime("%Y-%m-%d")
     target_chat = chat_id or settings.telegram_report_chat_id
@@ -35,8 +35,9 @@ async def send_daily_report(chat_id: str | None = None, triggered_manually: bool
                 logger.info("Daily report for %s already sent, skipping", today_str)
                 return {"skipped": True, "reason": "already_sent_today"}
 
-    # 1) Tarama
-    runs = await run_full_scan()
+    # 1) Manual report can scan first; scheduled report uses products accumulated by continuous scans.
+    runs = await run_full_scan() if scan_before_report else []
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=max(1, settings.report_lookback_hours))
 
     # 2) En iyi ürünleri seç ve gönder
     async with async_session() as session:
@@ -46,8 +47,9 @@ async def send_daily_report(chat_id: str | None = None, triggered_manually: bool
                 Product.delivered.is_(False),
                 Product.is_suppressed.is_(False),
                 Product.score_sogo_fit >= settings.min_sogo_score,
+                Product.discovered_at >= cutoff,
             )
-            .order_by(desc(Product.score_sogo_fit))
+            .order_by(desc(Product.score_sogo_fit), desc(Product.score_trend), desc(Product.discovered_at))
             .limit(settings.daily_target_max)
         )
         candidates = result.scalars().all()
@@ -70,6 +72,7 @@ async def send_daily_report(chat_id: str | None = None, triggered_manually: bool
             "sources_degraded": sum(1 for r in runs if r.status == "degraded"),
             "sources_disabled": sum(1 for r in runs if r.status == "disabled"),
             "sources_blocked": sum(1 for r in runs if r.status == "blocked"),
+            "lookback_hours": settings.report_lookback_hours,
             "candidates_found": len(candidates),
             "sent": sent,
             "failed": failed,
@@ -85,7 +88,8 @@ async def send_daily_report(chat_id: str | None = None, triggered_manually: bool
     # 3) Özet mesajı ayrıca gönder
     summary_text = (
         f"📈 <b>Günlük Özet - {today_str}</b>\n\n"
-        f"Taranan kaynak: {summary['sources_scanned']}\n"
+        f"Rapor aralığı: son {summary['lookback_hours']} saat\n"
+        f"Rapor öncesi taranan kaynak: {summary['sources_scanned']}\n"
         f"Sağlıklı: {summary['sources_healthy']} | Degraded: {summary['sources_degraded']} | "
         f"Devre dışı: {summary['sources_disabled']} | Engelli: {summary['sources_blocked']}\n\n"
         f"Uygun aday ürün: {summary['candidates_found']}\n"

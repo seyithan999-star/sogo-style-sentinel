@@ -1,4 +1,5 @@
 import logging
+from html import escape
 from aiogram import Bot
 from aiogram.types import InputMediaPhoto
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,28 +13,40 @@ logger = logging.getLogger("sogo.bot.card")
 def build_caption(product: Product) -> str:
     price_line = f"{product.price} {product.currency}" if product.price and product.currency else "Fiyat bilgisi yok"
     published = product.published_at.strftime("%d.%m.%Y") if product.published_at else "Tespit tarihi kullanıldı"
-
-    note = (
-        f"Bu ürün {product.brand} kaynaklı, SOGO'nun aradığı premium/spor-şık DNA'sına "
-        f"uyum skoru {product.score_sogo_fit}/100. Ticari potansiyeli ve orijinal detayları "
-        f"nedeniyle öne çıkarıldı."
-    )
+    brand = escape(product.brand or "")
+    title = escape(product.title or "")
+    source = escape(product.source_name or "")
+    attrs = product.attributes or {}
+    attr_text = ", ".join(sorted({v for values in attrs.values() for v in (values if isinstance(values, list) else [])}))
+    attr_line = f"\n🧩 {escape(attr_text[:240])}" if attr_text else ""
 
     return (
-        f"<b>{product.brand}</b>\n"
-        f"{product.title}\n\n"
-        f"💰 {price_line}\n"
-        f"📅 {published}\n"
-        f"🔗 <a href='{product.canonical_url}'>Ürüne git</a>\n\n"
+        f"<b>{brand}</b>\n"
+        f"{title}\n\n"
+        f"💰 {escape(price_line)}\n"
+        f"📅 {escape(published)}\n"
+        f"🌐 Kaynak: {source}\n\n"
         f"📊 Ticari: {product.score_commercial}/10 | Orijinallik: {product.score_originality}/10 | "
-        f"Premium: {product.score_premium}/10\n"
-        f"🎯 SOGO Uyum: {product.score_sogo_fit}/100\n\n"
-        f"📝 {note}"
+        f"Premium: {product.score_premium}/10 | Trend: {product.score_trend}/10\n"
+        f"🎯 SOGO Uyum: {product.score_sogo_fit}/100"
+        f"{attr_line}"
+    )
+
+
+async def _send_link_and_feedback(bot: Bot, chat_id: str, product: Product, reply_to_message_id: int | None = None):
+    safe_url = escape(product.canonical_url, quote=True)
+    await bot.send_message(
+        chat_id=chat_id,
+        text=f"🔗 <b>Ürün linki</b>\n<a href=\"{safe_url}\">{safe_url}</a>",
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+        reply_to_message_id=reply_to_message_id,
+        reply_markup=feedback_keyboard(product.id),
     )
 
 
 async def send_product_card(bot: Bot, session: AsyncSession, chat_id: str, product: Product) -> bool:
-    """Ürünü 3 görsel + caption + feedback butonları ile gönderir. Başarısızsa DB'ye 'failed' yazar."""
+    """Send up to 3 distinct product images; keep the product link in its own message."""
     delivery = TelegramDelivery(product_id=product.id, chat_id=str(chat_id), status="pending")
     session.add(delivery)
     await session.flush()
@@ -42,28 +55,21 @@ async def send_product_card(bot: Bot, session: AsyncSession, chat_id: str, produ
     caption = build_caption(product)
 
     try:
+        reply_to = None
         if len(images) >= 2:
             media = [InputMediaPhoto(media=img.url) for img in images]
-            media[-1].caption = caption
-            media[-1].parse_mode = "HTML"
+            media[0].caption = caption
+            media[0].parse_mode = "HTML"
             sent_messages = await bot.send_media_group(chat_id=chat_id, media=media)
-            # Feedback butonlarını albümün altına ayrı mesaj olarak ekle (Telegram media_group'a inline keyboard eklemez)
-            await bot.send_message(
-                chat_id=chat_id, text="Bu ürünü nasıl buldun?",
-                reply_to_message_id=sent_messages[-1].message_id,
-                reply_markup=feedback_keyboard(product.id),
-            )
+            reply_to = sent_messages[-1].message_id
         elif len(images) == 1:
-            await bot.send_photo(
-                chat_id=chat_id, photo=images[0].url, caption=caption, parse_mode="HTML",
-                reply_markup=feedback_keyboard(product.id),
-            )
+            msg = await bot.send_photo(chat_id=chat_id, photo=images[0].url, caption=caption, parse_mode="HTML")
+            reply_to = msg.message_id
         else:
-            await bot.send_message(
-                chat_id=chat_id, text=caption, parse_mode="HTML",
-                reply_markup=feedback_keyboard(product.id),
-            )
+            msg = await bot.send_message(chat_id=chat_id, text=caption, parse_mode="HTML")
+            reply_to = msg.message_id
 
+        await _send_link_and_feedback(bot, chat_id, product, reply_to)
         delivery.status = "sent"
         product.delivered = True
         await session.commit()

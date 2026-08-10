@@ -24,12 +24,13 @@ def _is_admin(user_id: int) -> bool:
 async def cmd_start(message: Message):
     await message.answer(
         "👋 <b>SOGO Style Sentinel</b> aktif.\n\n"
-        "Her sabah 08:00'de (Europe/Istanbul) yeni ve SOGO'ya uygun kadın giyim ürünlerini burada bulacaksın.\n\n"
+        "Gün boyunca kaynakları takip eder; her sabah 08:00'de (Europe/Istanbul) biriken yeni ve SOGO'ya uygun kadın giyim ürünlerini raporlar.\n\n"
         "Komutlar:\n"
         "/status - sistem durumu\n"
         "/report - manuel rapor / dry-run başlat\n"
         "/favorites - favori ürünlerin\n"
-        "/search kelime - manuel arama\n",
+        "/search kelime - kayıtlı ürünlerde arama\n"
+        "/sources - takip kapsamı ve bağlantı durumu\n",
         parse_mode="HTML",
     )
 
@@ -56,6 +57,23 @@ async def cmd_status(message: Message):
         lines.append(f"• {r.source_name}: {r.status} (bulunan {r.items_found}, yeni {r.items_new})")
 
     await message.answer("\n".join(lines), parse_mode="HTML")
+
+
+@router.message(Command("sources"))
+async def cmd_sources(message: Message):
+    from app.source_catalog import RETAIL_SOURCES, SOCIAL_RESEARCH_SOURCES, PREMIUM_BRANDS, INSTAGRAM_ACCOUNTS
+    provider = "BAĞLI" if settings.search_provider_url and settings.search_provider_key else "AYAR BEKLİYOR"
+    text = (
+        "🛰 <b>Takip Kapsamı</b>\n\n"
+        f"Lisanslı arama sağlayıcısı: <b>{provider}</b>\n"
+        f"Perakende/market kaynakları: {len(RETAIL_SOURCES)}\n"
+        f"Sosyal araştırma kaynakları: {len(SOCIAL_RESEARCH_SOURCES)}\n"
+        f"Premium marka havuzu: {len(PREMIUM_BRANDS)}\n"
+        f"Instagram hedef hesabı: {len(INSTAGRAM_ACCOUNTS)}\n"
+        f"Tarama aralığı: {settings.scan_interval_minutes} dakika\n\n"
+        "Not: API/partner izni gerektiren kaynaklar izin verilene kadar disabled görünür; bot sahte başarı üretmez."
+    )
+    await message.answer(text, parse_mode="HTML")
 
 
 @router.message(Command("report"))

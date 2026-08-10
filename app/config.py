@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     daily_target_min: int = 100
     daily_target_max: int = 200
     min_sogo_score: int = 55
+    scan_interval_minutes: int = 30
+    report_lookback_hours: int = 24
+    search_provider_url: str = ""
+    search_provider_key: str = ""
+    search_provider_max_queries: int = 30
+    search_provider_auth_header: str = "X-API-KEY"
+    manual_color_palette: str = ""
 
     # Dashboard
     dashboard_username: str = "admin"

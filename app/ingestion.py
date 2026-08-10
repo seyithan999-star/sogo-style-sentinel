@@ -15,6 +15,8 @@ from app.dedup import canonical_url_hash, compute_perceptual_hash, hash_distance
 from app.filters import is_excluded_brand, is_excluded_category, passes_basic_quality
 from app.models import Product, ProductImage, SourceRun, StyleSignal
 from app.scoring import score_product
+from app.attribute_extraction import extract_attributes
+from app.image_ranker import rank_image_urls
 
 logger = logging.getLogger("sogo.ingestion")
 
@@ -78,13 +80,18 @@ async def run_source(adapter: BaseSourceAdapter, session: AsyncSession, style_we
                 score_premium=scores["premium"],
                 score_sogo_fit=scores["sogo_fit"],
                 score_trend=scores["trend"],
+                attributes=extract_attributes(f"{raw.title} {raw.category or ''} {raw.raw_metadata}"),
                 raw_metadata=raw.raw_metadata,
             )
             session.add(product)
             await session.flush()
 
             seen_hashes: list[str] = []
-            for idx, img_url in enumerate(raw.image_urls[:3]):
+            selected_count = 0
+            ranked_images = rank_image_urls(raw.image_urls)
+            for img_url in ranked_images[:8]:
+                if selected_count >= 3:
+                    break
                 phash = await compute_perceptual_hash(img_url)
                 if phash and any(hash_distance(phash, h) <= 2 for h in seen_hashes):
                     continue  # bu üründe zaten çok benzer görsel var, tekrar ekleme
@@ -93,10 +100,11 @@ async def run_source(adapter: BaseSourceAdapter, session: AsyncSession, style_we
                 session.add(ProductImage(
                     product_id=product.id,
                     url=img_url,
-                    role=IMAGE_ROLES[idx] if idx < len(IMAGE_ROLES) else "extra",
-                    order_index=idx,
+                    role=IMAGE_ROLES[selected_count],
+                    order_index=selected_count,
                     perceptual_hash=phash,
                 ))
+                selected_count += 1
             new_count += 1
 
         run.items_new = new_count

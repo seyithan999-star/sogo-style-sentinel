@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Product, StyleSignal
 from app.scoring import PREMIUM_KEYWORDS, TARGET_COLORS
+from app.attribute_extraction import extract_attributes
 
 ACTION_DELTA = {
     "love": 6.0,
@@ -20,14 +21,14 @@ ACTION_DELTA = {
 
 
 def _extract_signal_values(product: Product) -> dict[str, list[str]]:
-    text = f"{product.title} {product.category or ''}".lower()
-    signals: dict[str, list[str]] = {"color": [], "fabric_or_detail": [], "source": [product.source_name]}
-    for c in TARGET_COLORS:
-        if c in text:
-            signals["color"].append(c)
+    text = f"{product.title} {product.category or ''} {product.raw_metadata}".lower()
+    signals: dict[str, list[str]] = {"source": [product.source_name], "brand": [product.brand.lower()]}
+    attrs = product.attributes or extract_attributes(text)
+    for group, values in attrs.items():
+        signals[group] = list(values)
     for k in PREMIUM_KEYWORDS:
         if k in text:
-            signals["fabric_or_detail"].append(k)
+            signals.setdefault("fabric_or_detail", []).append(k)
     return signals
 
 
